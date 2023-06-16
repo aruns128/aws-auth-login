@@ -1,37 +1,40 @@
-export function createUser(event, bcrypt, dynamodb) {
-  const { email, password } = JSON.parse(event.body);
+import * as bcrypt from "bcrypt";
+export const createUser = async (email, password, dynamoDB) => {
+  console.log(email, password);
 
-  return bcrypt
-    .hash(password, 10)
-    .then((hashedPassword) => {
-      const params = {
-        TableName: "auth",
-        Item: {
-          email: email,
-          password: hashedPassword,
-        },
-      };
+  const existingEmailParams = {
+    TableName: "auth",
+    FilterExpression: "email = :email",
+    ExpressionAttributeValues: {
+      ":email": email,
+    },
+  };
+  const result = await dynamoDB.scan(existingEmailParams).promise();
+  const users = result.Items;
 
-      return dynamodb
-        .put(params)
-        .promise()
-        .then(() => {
-          return {
-            statusCode: 200,
-            body: "User created successfully",
-          };
-        })
-        .catch(() => {
-          return {
-            statusCode: 500,
-            body: "Failed to create user",
-          };
-        });
-    })
-    .catch(() => {
-      return {
-        statusCode: 500,
-        body: "Failed to hash password",
-      };
-    });
-}
+  if (users.length) {
+    return { statusCode: 500, body: "User already exist" };
+  } else {
+    const id = Date.now();
+    const salt = bcrypt.genSaltSync(10);
+    const hashedPassword = bcrypt.hashSync(password, salt);
+
+    const params = {
+      TableName: "auth",
+      Item: {
+        email: email,
+        password: hashedPassword,
+        id: `${id}`,
+      },
+    };
+    console.log(params);
+    try {
+      await dynamoDB.put(params).promise();
+      const body = { statusCode: 200, body: "User created successfully" };
+      return body;
+    } catch (error) {
+      console.log(error);
+      return { statusCode: 500, body: "Failed to create user" };
+    }
+  }
+};
